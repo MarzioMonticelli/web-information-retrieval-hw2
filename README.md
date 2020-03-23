@@ -5,7 +5,7 @@ This solution has been developed in team.
 
 ### What is this repository for? ###
 
-* WIR Homework 3
+* WIR Homework 2
 * Version 1.0
 
 ### How do I get set up? ###
