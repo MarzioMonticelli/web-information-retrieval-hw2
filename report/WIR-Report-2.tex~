@@ -1,0 +1,350 @@
+\documentclass[a4paper,9pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{caption}
+\usepackage{listings}
+\usepackage{comment}
+\usepackage{color}
+\usepackage{hyperref}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\DeclareCaptionFont{white}{ \color{white} }
+
+\DeclareCaptionFormat{listing2}{
+  \rule{
+    \dimexpr\textwidth-2pt\relax
+    }{0.4pt}\vskip1pt#1#2#3}
+\captionsetup[lstlisting]{ format=listing2, labelfont=white, singlelinecheck=false, margin=0pt, font={sf,footnotesize} }
+
+\lstset{frame=tb,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\fontsize{7}{8}\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  breaklines=true,
+  breakatwhitespace=true,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  tabsize=3,
+  numbers=left,                    % where to put the line-numbers; possible values are (none, left, right)
+  numbersep=5pt,                   % how far the line-numbers are from the code
+  numberstyle=\tiny   % the style that is used for the line-numbers
+}
+
+\lstdefinestyle{myPy}{
+  language=python,
+  morekeywords={assert}
+}
+
+
+\renewcommand{\lstlistingname}{Algorithm}% Listing -> Algorithm
+
+\title{Homework 2}
+\author{Francesco Ilario 1469228 \\
+        Marzio Monticelli 1459333}
+
+\begin{document}
+
+\maketitle
+
+\section{Dataset}
+The used dataset is composed by a graph where each node represents a movie.
+The Movie-Graph is composed by $1.682$ nodes and $983.206$ edges.
+For what concerns the \texttt{user\_movie\_rating.txt}, it contains $943$ users, $100.000$ ratings and $1.682$ different rated movies, so all the movies in the graph has been rated by at least one user.
+\begin{comment}
+Number of nodes:  1682
+Number of edges:  983206
+Number of users:  943
+Number of ratings:  100000
+Number of different rated movies:  1682
+\end{comment}
+
+\section{Pagerank Algorithm}
+In the following we will present the developed functions used in order to calculate the Pagerank for an undirected weighted graph.
+They are two functions: the main one and the auxiliary one. \\
+The former is the \texttt{calculate\_page\_rank()} function.
+It is used to trigger the process that will calculate the Pagerank.
+It needs no parameter to be tuned, but it gives the possibility to tune the graph on which you would calculate the Pagerank (by default it calls a function that will extract the graph from the given \texttt{movie\_graph.txt} file), the alpha value (by default it is $0.15$), the epsilon, i.e. the degree of convergence (by default it is $10^{-6}$), and the personalization vector (by default it is None).
+First of all it calculates an initial Pagerank distributing the probability in an uniform way among all nodes.
+So it creates a vector where each node has an entry and each node has the same value of Pagerank that is equal to: $\frac{1}{N}$, where $N$ is the total number of nodes in the graph.
+After that the function will create a vector named \texttt{precomputed\_weights}, in which for each node it will store the sum of all its edges' weights.
+This vector will be used as an optimization by the auxiliary method in order to do not recalculate it every time.
+Finally it will enter in a loop where it will call the auxiliary method that will give back the next-iteration Pagerank, and will end when the distance between two following Pageranks will be less than \texttt{epsilon}.
+\newpage
+\begin{lstlisting}[style=myPy, caption={Pagerank Main Function for Undirected Weighted Graph}, label={alg:my-pagerank-all}]
+def calculate_page_rank(graph=dr.extract_graph(), alpha=alpha, epsilon=epsilon,
+                        personalization=None):
+    """
+    It computes the pagerank for the given Undirected Weighted Graph, alpha, epsilon,
+    and personalization.
+    
+    :param networkx.Graph graph: Weighted Undirected graph
+    :param float alpha: the pagerank alpha value
+    :param float epsilon: the degree of convergence
+    :param dict[int, float] personalization: a map <node_id, interest> used to personalize 
+     the teleport
+    :return: the pagerank with a degree of convergence of epsilon
+    """
+    # creates an initial uniform distribution of probability among all nodes
+    previous_page_rank_vector = create_initial_pagerank_vector(graph)
+
+    num_iterations = 0
+    # pre-compute weights vector for optimization
+    precomputed_weights = {}
+    for node_j in graph.nodes(data=False):
+        if node_j not in precomputed_weights:
+            weight_tot = 0.
+            for adj2_node_j in graph.neighbors(node_j):
+                data = graph.get_edge_data(node_j, adj2_node_j)
+                assert 'weight' in data.keys()
+                weight_tot += float(data['weight'])
+            precomputed_weights[node_j] = weight_tot
+
+    while True:
+        # compute next pagerank from the previous one
+        pagerank_vector = single_iteration_page_rank(graph, previous_page_rank_vector,
+                                                     alpha=alpha, personalization=personalization,
+                                                     precomputed_weights=precomputed_weights)
+
+        num_iterations += 1
+        # evaluate the distance between the old and new pagerank vectors
+        distance = get_distance(previous_page_rank_vector, pagerank_vector)
+        # check convergency
+        if distance <= epsilon:
+            # print
+            # print " Convergence!"
+            # print
+            break
+
+        previous_page_rank_vector = pagerank_vector
+
+    # sort the pagerank vector in decreasing order of pagerank value
+    sorted_pagerank_vector = sorted(pagerank_vector.items(), key=operator.itemgetter(1),
+                                    reverse=True)
+    sorted_pagerank_dict = {}
+    for pr_tuple in sorted_pagerank_vector:
+        sorted_pagerank_dict[pr_tuple[0]] = pr_tuple[1]
+
+    return sorted_pagerank_dict
+\end{lstlisting}
+
+
+\newpage
+The former method -the auxiliary one- calculates the next Pagerank from the previous one.
+The product of this operation is a more precise Pagerank estimation based on the previous one.
+It keeps five parameters:
+\begin{enumerate}
+  \item \texttt{graph}: it is the graph on which the Pagerank must be calculated;
+  \item \texttt{page\_rank\_vector}: the previous Pagerank;
+  \item \texttt{alpha}: expresses how to split the probability between the normal behavior and the teleport (by default it is $0.15$);
+  \item \texttt{personalization}: a vector that express how to personalize the teleport (by default it is None);
+  \item \texttt{precomputed\_weights}: an optimization used in order to do not recalculate every time the sum of all the edges' weights of every node (by default it is None).
+\end{enumerate}
+
+The main differences between this algorithm and the given one for the Direct Unweighted Graph are the facts that -obviously- with a Undirected graph we will no more distinguish between \textit{in} and \textit{out} edges, the different way to calculate the ``importance'' ratio of an edge (Algorithm \ref{alg:my-pagerank-single}, line $43$), and the possibility to personalize the teleport.
+The Unweighted algorithm can be thought as a generalization of the Weighted where each edge has unitary weight.
+At each iteration, the new Pagerank value for every node is obtained by its previous Pagerank value.
+The new Pagerank value of a node is obtained by considering each outgoing edge and iteratively summing the previous Pagerank value scaled by the \textit{damping factor} ($1-\alpha$) and by the importance of the considered edge.
+More formally, having the previous Pagerank value $P_n$ for the node $n$, the next Pagerank value $P'_n$ will be:
+\begin{center}
+  $P'_n = \sum_{e_{n,m} \in E_n} weight(e_{n,m}) \times ( 1 - \alpha ) \times importance(e_{n,m}) $
+\end{center}
+The importance of an edge $e_{n,m}$ that connects two nodes ($n, m$), is calculated in the Undirected Weighted Graph as follows:
+\begin{center}
+  $ importance(e_{n,m}) = \frac{weight(e_{n,m})}{\sum_{e_{m,p} \in E_m} weight(e_{m,p})}$
+\end{center}
+As we previously said, the Unweighted Graph can be thought as a particular case of the Weighted Graph, where each edge has weight $1$.
+Hence, the importance in the Unweighted Graph case will be the follow:
+\begin{center}
+  $importance(e_{n,m}) = \frac{1}{| E_m |}$
+\end{center}
+Indeed in this case $weight(e_{n,m})$ is equal to $1$, and $\sum_{e_{m,p} \in E_m} weight(e_{m,p})$ is equal to $| E_m |$.
+The last important difference is the \textit{personalization} dictionary.
+It is a dictionary with as key a node id, and as value a float that expresses the interest in teleporting to this node.
+It is not necessary to normalize this values, they will be normalized by the algorithm.
+If the personalization dictionary is not defined, the teleport will be calculated uniformly among all nodes.
+
+\newpage
+\begin{lstlisting}[style=myPy, caption={Pagerank Auxiliary Function for Undirected Weighted Graph}, label={alg:my-pagerank-single}]
+def single_iteration_page_rank(graph, page_rank_vector, alpha=alpha, personalization=None,
+                               precomputed_weights=None):
+    """
+    Calculates a single iteration pagerank from the previous pagerank
+    
+    :param networkx.Graph graph:
+    :param dict[int, float] page_rank_vector: previous iteration pagerank 
+    :param float alpha: the alpha value of the pagerank
+    :param dict[int, float] | None personalization: a map <node_id, interest> used to 
+     personalize the teleport 
+    :param dict[int, float] precomputed_weights: it is an optimization in order to speed up 
+     the algorithm using the Dynamic Programming technique. Without this optimization the sum
+     of the weights of all the edges of each node will be computed at each iteration, while 
+     with this optimization it would not be needed and the algorithm will be much faster.
+    :return: the current iteration pagerank
+    :rtype: dict[int, float]
+    """
+    if precomputed_weights is None:
+        precomputed_weights = dict()
+    next_page_rank_vector = {}
+    sum_rjs = 0.
+    for node_j in graph.nodes(data=False):
+        r_j = 0.
+        for adj_node_j in graph.neighbors(node_j):
+            data = graph.get_edge_data(node_j, adj_node_j)
+            assert 'weight' in data.keys()
+            weight = float(data['weight'])
+
+            # retrieve or calculate the sum of the weights of the edges of the adjacent node
+            if adj_node_j in precomputed_weights:
+                weight_tot = precomputed_weights[adj_node_j]
+            else:
+                weight_tot = 0.
+                for adj2_node_j in graph.neighbors(adj_node_j):
+                    data = graph.get_edge_data(adj_node_j, adj2_node_j)
+                    assert 'weight' in data.keys()
+                    weight_tot += float(data['weight'])
+                precomputed_weights[adj_node_j] = weight_tot
+
+            # increases the pagerank value of the current node with the contribute from the 
+            # edge in analysis
+            r_j += (1. - alpha) * page_rank_vector[adj_node_j] * weight / weight_tot
+        next_page_rank_vector[node_j] = r_j
+        sum_rjs += r_j
+    leaked_pr = 1. - sum_rjs
+
+    # here it divides the leaked_pr
+    # (the alpha % of probability that has to be given to the Teleport)
+    if personalization:
+        assert type(personalization) == dict
+        personalization_total_values = float(sum(personalization.values()))
+
+        # distributes the probability with respect to the preferences
+        # expressed with the personalization vector
+        for node_index, personalization_value in personalization.items():
+            assert node_index in next_page_rank_vector
+            next_page_rank_vector[
+                node_index] += leaked_pr * personalization_value / personalization_total_values
+
+    else:
+        # uniform distribution among all nodes
+        num_nodes = graph.number_of_nodes()
+        for index in next_page_rank_vector.keys():
+            next_page_rank_vector[index] += leaked_pr / num_nodes
+
+    # check: the sum of all the PageRanks must be 1.0
+    # because it is a probability distribution
+    next_page_rank_vector_sum = float(sum(next_page_rank_vector.values()))
+    assert is_close(next_page_rank_vector_sum, 1.)
+
+    return next_page_rank_vector
+\end{lstlisting}
+
+\section{Part Two}
+The goal of this part is to implement a method for recommending movies to users contained in the file “user\_movie\_rating.txt”.
+When started the program parses the inputs and checks for correctness, then creates a personalization vector with the data extracted for the given users.
+\begin{lstlisting}[style=myPy, caption={Pagerank with User-Movie-Ratings: Personalization}, label={alg:part-two-1}]
+    # extract personalization from user-rating
+    personalization = {}
+    ratings_sum = float(sum(user_rated_movies.values()))
+
+    # normalization
+    for movie_id, rating in user_rated_movies.items():
+        personalization[movie_id] = rating / ratings_sum
+\end{lstlisting}
+This personalization vector is now used to calculate the Pagerank.
+As last thing, from the resultant Pagerank are filtered out all the entry for the user's yet-rated films and the Pagerank is normalized to $1.0$.
+\begin{lstlisting}[style=myPy, caption={Pagerank with User-Movie-Ratings: Filter/Normalization}, label={alg:part-two-2}]
+    # Filter user_page_ranks:
+    for movie_id in user_rated_movies.keys():
+        user_page_rank.pop(movie_id)
+
+    # renormalize pagerank to 1.0
+    pagerank_sum = float(sum(user_page_rank.values()))
+    for movie_id, pagerank in user_page_rank.items():
+        user_page_rank[movie_id] = pagerank / pagerank_sum
+\end{lstlisting}
+
+\newpage
+\section{Part Three}
+In this part is asked to compute a ``categorical'' Pagerank. 
+That is, the user can express the interest in the available categories (5 for this dataset) through a vector of the form \textit{WeightCategory1\_WeightCategory2\_\dots \_WeightCategory5}, and the program have to return a Pagerank where the personalization vector is built on this vector.
+Another important thing is that the calculation of the Pagerank must be done in two phases:
+\begin{enumerate}
+  \item \texttt{Offline}: must generate independent data that will be used later;
+  \item \texttt{Online}: uses the independent data to obtain the Pagerank, without really calculating it.
+\end{enumerate}
+
+\noindent
+In order to do this, we can rely on what said in the Section 21.2 of the Book \textit{Introduction to Information Retrieval}: \\
+\textit{
+``It is not necessary to compute a PageRank vector for every distinct combination of user interests over topics;
+the personalized PageRank vector for any user can be expressed as a linear combination of the underlying topic-specific PageRanks.
+For instance, the personalized PageRank vector for the user whose interests are 60\% sports and 40\% politics can be computed as:
+}
+\begin{center}
+  $0.6 \pi_s + 0.4\pi_p$
+\end{center}
+\textit{where $\pi_s$ and $\pi_p$ are the topic-specific PageRank vectors for sports and politics, respectively.''}. \\
+Hence, we can pre-compute the PageRank of each category in the offline part, and linearly combine them at request time (online).
+\subsection{Offline}
+The main part of the Offline module is the function \texttt{create\_datasets()}:
+\begin{lstlisting}[style=myPy, caption={Category-Pagerank Online: Datasets Creation}, label={alg:part-three-offline}]
+def create_datasets():
+    categories = dr.extract_categories()
+
+    for cat_num, category in enumerate(categories):
+        cat_file_path = dataset_dir + category_file_prefix + str(cat_num)
+        if os.path.isfile(cat_file_path):
+            continue
+
+        cat_file = open(cat_file_path, 'w')
+
+        cat_personalization = {0: 0., 1: 0., 2: 0., 3: 0., 4: 0., cat_num: 1.}
+        category_pagerank = po.calculate_page_rank_categories(category_interest=cat_personalization)
+
+        for movie_id, movie_pagerank in category_pagerank.items():
+            cat_file.write(str(movie_id) + ": " + str(movie_pagerank) + "\n")
+
+        cat_file.close()
+\end{lstlisting}
+This function will store inside an ad-hoc file the PageRank for each category.
+The auxiliary function \texttt{calculate\_page\_rank\_categories()} simply creates the personalization vector in the form <node\_id, interest> from the one in the form <category\_id, interest> and then calls the PageRank function.
+\subsection{Online}
+For what concerns the Online part, first of all it checks if the category-PageRank files have yet been calculated, otherwise it ask to the offline module to generate them.
+\begin{lstlisting}[style=myPy, caption={Category-Pagerank Online: Check}, label={alg:part-three-online-1}]
+    if not offline.are_category_pagerank_generated():
+        offline.create_datasets()
+\end{lstlisting}
+
+Then we normalize the input vector.
+\begin{lstlisting}[style=myPy, caption={Category-Pagerank Online: Interest Normalization}, label={alg:part-three-online-2}]
+    # normalize categories_interest
+    interest_sum = float(sum(user_preference_vector_float.values()))
+    for cat_id in user_preference_vector_float.keys():
+        user_preference_vector_float[cat_id] /= interest_sum
+\end{lstlisting}
+
+After that we are sure to have the base files that we need in order to calculate the result.
+So we linearly combine the previously calculated PageRanks scaling each of them for the normalized interest in the corresponding category.
+\begin{lstlisting}[style=myPy, caption={Category-Pagerank Online: Result Composition}, label={alg:part-three-online-3}]
+    # Calculating composite pagerank
+    num_pagerank_entries = len(offline.get_category_pagerank(0).keys())
+    composite_pagerank = dict((x, 0.) for x in xrange(1, num_pagerank_entries + 1))
+
+    for cat_id, interest in user_preference_vector_float.items():
+        if interest > 0.:
+            cat_pagerank = offline.get_category_pagerank(cat_id)
+            for comp_cat_id, comp_interest in composite_pagerank.items():
+                composite_pagerank[comp_cat_id] += cat_pagerank[comp_cat_id] * interest
+\end{lstlisting}
+
+\end{document}

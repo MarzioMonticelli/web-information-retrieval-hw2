@@ -1,0 +1,9 @@
+movie_graph:
+movie_id_source    movie_id_sink    weight
+
+user_movie_rating:
+user_id     movie_id    rating
+
+category_movies:
+5 categories: 1 per line
+each i-th line represents the set of movie identifiers belonging to the i-th category
